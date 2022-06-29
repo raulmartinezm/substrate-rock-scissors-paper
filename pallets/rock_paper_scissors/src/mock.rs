@@ -1,4 +1,4 @@
-use crate as pallet_template;
+use crate as pallet_rock_paper_scissors;
 use frame_support::traits::{ConstU16, ConstU64};
 use frame_system as system;
 use sp_core::H256;
@@ -18,7 +18,7 @@ frame_support::construct_runtime!(
 		UncheckedExtrinsic = UncheckedExtrinsic,
 	{
 		System: frame_system::{Pallet, Call, Config, Storage, Event<T>},
-		TemplateModule: pallet_template::{Pallet, Call, Storage, Event<T>},
+		RPS: pallet_rock_paper_scissors::{Pallet, Call, Storage, Event<T>},
 	}
 );
 
@@ -49,11 +49,21 @@ impl system::Config for Test {
 	type MaxConsumers = frame_support::traits::ConstU32<16>;
 }
 
-impl pallet_template::Config for Test {
+impl pallet_rock_paper_scissors::Config for Test {
 	type Event = Event;
 }
 
 // Build genesis storage according to the mock runtime.
 pub fn new_test_ext() -> sp_io::TestExternalities {
-	system::GenesisConfig::default().build_storage::<Test>().unwrap().into()
+	let mut ext: sp_io::TestExternalities =
+		system::GenesisConfig::default().build_storage::<Test>().unwrap().into();
+	ext.execute_with(|| {
+		System::set_block_number(1);
+	});
+
+	ext
+}
+
+pub fn last_event() -> Event {
+	frame_system::Pallet::<Test>::events().pop().expect("Event expected").event
 }
