@@ -2,13 +2,15 @@ use frame_support::assert_noop;
 
 use crate::{
 	mock::{self, *},
-	Error, GameMovement, GameResult, GameState, Secret, SecretGameMovement,
+	Error, GameId, GameMovement, GameResult, GameState, Secret,
 };
 
 pub const ALICE: <Test as frame_system::Config>::AccountId = 1u64;
 pub const BOB: <Test as frame_system::Config>::AccountId = 2u64;
 pub const DAVE: <Test as frame_system::Config>::AccountId = 3u64;
 pub const A_SECRET: Secret = 1u64;
+pub const ANOTHER_SECRET: Secret = 2u64;
+pub const GAME_ID: GameId = 1;
 
 #[test]
 fn it_should_create_a_game() {
@@ -58,10 +60,10 @@ fn play_game_should_emit_error_when_a_game_is_not_found() {
 fn play_game_should_emit_error_when_a_game_is_full() {
 	new_test_ext().execute_with(|| {
 		let _ = RPS::create_game(Origin::signed(ALICE));
-		let _ = RPS::play_game(Origin::signed(ALICE), 1, GameMovement::Rock, A_SECRET);
-		let _ = RPS::play_game(Origin::signed(BOB), 1, GameMovement::Rock, A_SECRET);
+		let _ = RPS::play_game(Origin::signed(ALICE), GAME_ID, GameMovement::Rock, A_SECRET);
+		let _ = RPS::play_game(Origin::signed(BOB), GAME_ID, GameMovement::Rock, A_SECRET);
 		assert_noop!(
-			RPS::play_game(Origin::signed(DAVE), 1, GameMovement::Rock, A_SECRET),
+			RPS::play_game(Origin::signed(DAVE), GAME_ID, GameMovement::Rock, A_SECRET),
 			Error::<Test>::GameIsFull
 		);
 	});
@@ -71,9 +73,9 @@ fn play_game_should_emit_error_when_a_game_is_full() {
 fn play_game_should_emit_error_when_a_player_tries_to_join_twice() {
 	new_test_ext().execute_with(|| {
 		let _ = RPS::create_game(Origin::signed(ALICE));
-		let _ = RPS::play_game(Origin::signed(ALICE), 1, GameMovement::Rock, A_SECRET);
+		let _ = RPS::play_game(Origin::signed(ALICE), GAME_ID, GameMovement::Rock, A_SECRET);
 		assert_noop!(
-			RPS::play_game(Origin::signed(ALICE), 1, GameMovement::Rock, A_SECRET),
+			RPS::play_game(Origin::signed(ALICE), GAME_ID, GameMovement::Rock, A_SECRET),
 			Error::<Test>::PlayerAlreadyInGame
 		);
 	});
@@ -83,9 +85,146 @@ fn play_game_should_emit_error_when_a_player_tries_to_join_twice() {
 fn play_game_saves_player_movement() {
 	new_test_ext().execute_with(|| {
 		let _ = RPS::create_game(Origin::signed(ALICE));
-		let _ = RPS::play_game(Origin::signed(ALICE), 1, GameMovement::Rock, A_SECRET);
+		let _ = RPS::play_game(Origin::signed(ALICE), GAME_ID, GameMovement::Rock, A_SECRET);
 		assert_eq!(last_event(), mock::Event::RPS(crate::Event::PlayerMadeMovement(ALICE)));
-		let _ = RPS::play_game(Origin::signed(BOB), 1, GameMovement::Paper, A_SECRET);
+		let _ = RPS::play_game(Origin::signed(BOB), GAME_ID, GameMovement::Paper, A_SECRET);
 		assert_eq!(last_event(), mock::Event::RPS(crate::Event::PlayerMadeMovement(BOB)));
+	});
+}
+
+#[test]
+fn reveal_winner_should_emit_event_when_game_not_found() {
+	const NOT_EXISING_GAME_ID: GameId = 1;
+	new_test_ext().execute_with(|| {
+		assert_noop!(
+			RPS::reveal_winner(
+				Origin::signed(ALICE),
+				NOT_EXISING_GAME_ID,
+				GameMovement::Rock,
+				A_SECRET,
+				BOB,
+				GameMovement::Paper,
+				A_SECRET
+			),
+			Error::<Test>::GameNotFound
+		);
+	});
+}
+
+#[test]
+fn reveal_winner_should_emit_error_when_player_not_in_a_game() {
+	const NOT_EXISING_GAME_ID: GameId = 1;
+
+	new_test_ext().execute_with(|| {
+		let _ = RPS::create_game(Origin::signed(ALICE));
+		let _ = RPS::play_game(Origin::signed(ALICE), GAME_ID, GameMovement::Rock, A_SECRET);
+		let _ = RPS::play_game(Origin::signed(BOB), GAME_ID, GameMovement::Rock, A_SECRET);
+
+		assert_noop!(
+			RPS::reveal_winner(
+				Origin::signed(DAVE),
+				NOT_EXISING_GAME_ID,
+				GameMovement::Rock,
+				A_SECRET,
+				BOB,
+				GameMovement::Paper,
+				A_SECRET
+			),
+			Error::<Test>::PlayerNotInGame
+		);
+	});
+}
+
+#[test]
+fn reveal_winner_should_emit_error_when_hash_does_not_match() {
+	const NOT_EXISING_GAME_ID: GameId = 1;
+
+	new_test_ext().execute_with(|| {
+		let _ = RPS::create_game(Origin::signed(ALICE));
+		let _ = RPS::play_game(Origin::signed(ALICE), GAME_ID, GameMovement::Rock, A_SECRET);
+		let _ = RPS::play_game(Origin::signed(BOB), GAME_ID, GameMovement::Paper, ANOTHER_SECRET);
+
+		assert_noop!(
+			RPS::reveal_winner(
+				Origin::signed(ALICE),
+				NOT_EXISING_GAME_ID,
+				GameMovement::Rock,
+				A_SECRET,
+				BOB,
+				GameMovement::Paper,
+				A_SECRET
+			),
+			Error::<Test>::InvalidHash
+		);
+
+		assert_noop!(
+			RPS::reveal_winner(
+				Origin::signed(ALICE),
+				NOT_EXISING_GAME_ID,
+				GameMovement::Rock,
+				ANOTHER_SECRET,
+				BOB,
+				GameMovement::Paper,
+				ANOTHER_SECRET
+			),
+			Error::<Test>::InvalidHash
+		);
+	});
+}
+
+#[test]
+fn reveal_winner_should_emit_event_when_game_finished() {
+	new_test_ext().execute_with(|| {
+		let _ = RPS::create_game(Origin::signed(ALICE));
+		let _ = RPS::play_game(Origin::signed(ALICE), GAME_ID, GameMovement::Rock, A_SECRET);
+		let _ = RPS::play_game(Origin::signed(BOB), GAME_ID, GameMovement::Paper, ANOTHER_SECRET);
+		let _ = RPS::reveal_winner(
+			Origin::signed(ALICE),
+			GAME_ID,
+			GameMovement::Rock,
+			A_SECRET,
+			BOB,
+			GameMovement::Paper,
+			ANOTHER_SECRET,
+		);
+		assert_eq!(
+			last_event(),
+			mock::Event::RPS(crate::Event::GameFinished(GAME_ID, GameResult::Lose, Some(BOB)))
+		);
+	});
+}
+
+#[test]
+fn reveal_winner_should_emit_same_event_when_game_is_already_finished() {
+	new_test_ext().execute_with(|| {
+		let _ = RPS::create_game(Origin::signed(ALICE));
+		let _ = RPS::play_game(Origin::signed(ALICE), GAME_ID, GameMovement::Rock, A_SECRET);
+		let _ = RPS::play_game(Origin::signed(BOB), GAME_ID, GameMovement::Paper, ANOTHER_SECRET);
+		let _ = RPS::reveal_winner(
+			Origin::signed(ALICE),
+			GAME_ID,
+			GameMovement::Rock,
+			A_SECRET,
+			BOB,
+			GameMovement::Paper,
+			ANOTHER_SECRET,
+		);
+		assert_eq!(
+			last_event(),
+			mock::Event::RPS(crate::Event::GameFinished(GAME_ID, GameResult::Lose, Some(BOB)))
+		);
+		let _ = RPS::reveal_winner(
+			Origin::signed(ALICE),
+			GAME_ID,
+			GameMovement::Rock,
+			A_SECRET,
+			BOB,
+			GameMovement::Paper,
+			ANOTHER_SECRET,
+		);
+		assert_eq!(
+			last_event(),
+			mock::Event::RPS(crate::Event::GameFinished(GAME_ID, GameResult::Lose, Some(BOB)))
+		);
 	});
 }

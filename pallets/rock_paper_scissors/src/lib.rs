@@ -1,7 +1,7 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
 use frame_support::pallet_prelude::*;
-use frame_system::{pallet_prelude::*, Account};
+use frame_system::pallet_prelude::*;
 pub use pallet::*;
 
 use std::convert::Into;
@@ -18,64 +18,77 @@ mod benchmarking;
 pub type GameId = u64;
 pub type Secret = u64;
 
-#[derive(Clone, Encode, Debug, Decode, Eq, TypeInfo, MaxEncodedLen, PartialEq)]
+#[derive(Clone, Copy, Encode, Debug, Decode, Eq, TypeInfo, MaxEncodedLen, PartialEq)]
 pub struct SecretGameMovement([u8; 8]);
 
 impl SecretGameMovement {
-	pub fn new(movement: GameMovement, secret: u64) -> Self {
+	pub fn new(movement: GameMovement, secret: Secret) -> Self {
 		let mut bytes = sp_std::vec::Vec::new();
 		bytes.extend(movement.to_bytes());
 		bytes.extend(secret.to_ne_bytes());
 		SecretGameMovement(sp_io::hashing::twox_64(&bytes))
 	}
+
+	/// Returns true if the secret movement correspond to
+	pub fn is_equal(&self, movement: GameMovement, secret: Secret) -> bool {
+		SecretGameMovement::new(movement, secret) == *self
+	}
 }
 
-#[derive(Clone, Encode, Debug, Decode, Eq, TypeInfo, MaxEncodedLen, PartialEq)]
+#[derive(Clone, Copy, Encode, Debug, Decode, Eq, TypeInfo, MaxEncodedLen, PartialEq)]
 pub struct PlayerMovement<AccountId> {
 	player: AccountId,
 	movement: SecretGameMovement,
 }
 
-#[derive(Clone, Eq, Encode, Debug, Decode, TypeInfo, MaxEncodedLen, PartialEq)]
+#[derive(Clone, Copy, Encode, Debug, Decode, Eq, TypeInfo, MaxEncodedLen, PartialEq)]
 pub struct GameState<AccountId: PartialEq + Clone> {
-	pub players: [Option<PlayerMovement<AccountId>>; 2],
+	pub player1: Option<PlayerMovement<AccountId>>,
+	pub player2: Option<PlayerMovement<AccountId>>,
 	pub game_result: GameResult,
+	pub winner: Option<AccountId>,
 }
 
 impl<AccountId: PartialEq + Clone> Default for GameState<AccountId> {
 	fn default() -> Self {
-		Self { players: [None, None], game_result: GameResult::NotPlayed }
+		Self { player1: None, player2: None, game_result: GameResult::NotPlayed, winner: None }
 	}
 }
 
 impl<AccountId: PartialEq + Clone> GameState<AccountId> {
 	pub fn has_player(&self, player: AccountId) -> bool {
 		let mut found = false;
-		self.players.iter().for_each(|p| {
-			match p {
-				Some(val) => {
-					if val.player == player {
-						found = true;
-					}
-				},
-				_ => {},
-			};
-		});
+		if let Some(val) = &self.player1 {
+				if val.player == player {
+					found = true;
+				}
+			}
+		if let Some(val) = &self.player2 {
+			if val.player == player {
+				found = true;
+			}
+		}
 		return found;
 	}
 
 	/// Tells if there are free slots in a game
 	pub fn has_free_slots(&self) -> bool {
-		self.players[0].is_none() || self.players[1].is_none()
+		self.player1.is_none() || self.player2.is_none()
 	}
 
 	/// Add a player
-	pub fn add_player(&mut self, player: AccountId, movement: GameMovement, secret: Secret) -> bool {
-		let player_movement = Some(PlayerMovement { player, movement: SecretGameMovement::new(movement, secret) });
-		if self.players[0].is_none() {
-			self.players[0] = player_movement;
-		} else if self.players[1].is_none() {
-			self.players[1] = player_movement;
+	pub fn add_player(
+		&mut self,
+		player: AccountId,
+		movement: GameMovement,
+		secret: Secret,
+	) -> bool {
+		let player_movement =
+			Some(PlayerMovement { player, movement: SecretGameMovement::new(movement, secret) });
+		if self.player1.is_none() {
+			self.player1 = player_movement;
+		} else if self.player2.is_none() {
+			self.player2 = player_movement;
 		} else {
 			return false;
 		}
@@ -90,7 +103,7 @@ pub enum GameMovement {
 	Scissors,
 }
 
-#[derive(Clone, Debug, Decode, Encode, Eq, PartialEq, TypeInfo, MaxEncodedLen)]
+#[derive(Clone, Copy, Debug, Decode, Encode, Eq, PartialEq, TypeInfo, MaxEncodedLen)]
 pub enum GameResult {
 	NotPlayed,
 	Win,
@@ -157,6 +170,7 @@ pub mod pallet {
 	pub enum Event<T: Config> {
 		GameCreated(GameId),
 		PlayerMadeMovement(T::AccountId),
+		GameFinished(GameId, GameResult, Option<T::AccountId>)
 	}
 
 	// Errors inform users that something went wrong.
@@ -172,6 +186,10 @@ pub mod pallet {
 		GameIsFull,
 		/// The player is already in the game
 		PlayerAlreadyInGame,
+		/// Player not found in a game
+		PlayerNotInGame,
+		/// The secret movement (hash) doesn't match with the secret and movement
+		InvalidHash,
 	}
 
 	#[pallet::call]
@@ -206,6 +224,58 @@ pub mod pallet {
 			Games::<T>::insert(game_id, game_state);
 
 			Self::deposit_event(Event::PlayerMadeMovement(account_id));
+			Ok(())
+		}
+
+		#[pallet::weight(10_000)]
+		pub fn reveal_winner(
+			origin: OriginFor<T>,
+			game_id: GameId,
+			player1_movement: GameMovement,
+			player1_secret: Secret,
+			player2: T::AccountId,
+			player2_movement: GameMovement,
+			player2_secret: Secret,
+		) -> DispatchResult {
+			let player1 = ensure_signed(origin)?;
+
+			let mut game_state = Games::<T>::get(game_id).ok_or(Error::<T>::GameNotFound)?;
+			ensure!(game_state.has_player(player1.clone()), Error::<T>::PlayerNotInGame);
+			ensure!(game_state.has_player(player2.clone()), Error::<T>::PlayerNotInGame);
+
+			let p1 = game_state.player1.as_ref().unwrap();
+			let p2 = game_state.player2.as_ref().unwrap();
+
+			ensure!(p1.movement.is_equal(player1_movement.clone(), player1_secret), Error::<T>::InvalidHash);
+			ensure!(p2.movement.is_equal(player2_movement.clone(), player2_secret), Error::<T>::InvalidHash);
+
+			if game_state.game_result != GameResult::NotPlayed {
+				Self::deposit_event(Event::GameFinished(game_id, game_state.game_result, game_state.winner));
+				return Ok(());
+			}
+
+			let game_result = player1_movement.play(player2_movement);
+
+			match game_result {
+				GameResult::Win => {
+					// Player1 wins
+					game_state.winner = Some(player1.clone());
+				},
+				GameResult::Lose => {
+					// Player2 wins
+					game_state.winner = Some(player2.clone());
+				}
+				GameResult::Draw => {
+					// Nobody wins or loses
+					game_state.game_result = GameResult::Draw;
+				},
+				_ => {}
+			}
+			let winner = game_state.winner.clone();
+			game_state.game_result = game_result.clone();
+			Games::<T>::insert(game_id, game_state);
+			Self::deposit_event(Event::GameFinished(game_id, game_result, winner));
+
 			Ok(())
 		}
 	}

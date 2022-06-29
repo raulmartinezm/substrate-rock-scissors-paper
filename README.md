@@ -1,3 +1,11 @@
+# Substrate Rock-Paper-Scissors game
+
+Rock-Paper-Scissors game implementation in Substrate blockchain framework for learn and fun.
+
+Run tests:
+
+    $ cargo test -p pallet-rock-paper-scissors
+
 # Substrate Node Template
 
 [![Try on playground](https://img.shields.io/badge/Playground-Node_Template-brightgreen?logo=Parity%20Substrate)](https://docs.substrate.io/playground/) [![Matrix](https://img.shields.io/matrix/substrate-technical:matrix.org)](https://matrix.to/#/#substrate-technical:matrix.org)
