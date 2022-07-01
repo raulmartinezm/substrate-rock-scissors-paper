@@ -4,8 +4,6 @@ use frame_support::pallet_prelude::*;
 use frame_system::pallet_prelude::*;
 pub use pallet::*;
 
-use std::convert::Into;
-
 #[cfg(test)]
 mod mock;
 
@@ -59,10 +57,10 @@ impl<AccountId: PartialEq + Clone> GameState<AccountId> {
 	pub fn has_player(&self, player: AccountId) -> bool {
 		let mut found = false;
 		if let Some(val) = &self.player1 {
-				if val.player == player {
-					found = true;
-				}
+			if val.player == player {
+				found = true;
 			}
+		}
 		if let Some(val) = &self.player2 {
 			if val.player == player {
 				found = true;
@@ -170,7 +168,7 @@ pub mod pallet {
 	pub enum Event<T: Config> {
 		GameCreated(GameId),
 		PlayerMadeMovement(T::AccountId),
-		GameFinished(GameId, GameResult, Option<T::AccountId>)
+		GameFinished(GameId, GameResult, Option<T::AccountId>),
 	}
 
 	// Errors inform users that something went wrong.
@@ -246,11 +244,21 @@ pub mod pallet {
 			let p1 = game_state.player1.as_ref().unwrap();
 			let p2 = game_state.player2.as_ref().unwrap();
 
-			ensure!(p1.movement.is_equal(player1_movement.clone(), player1_secret), Error::<T>::InvalidHash);
-			ensure!(p2.movement.is_equal(player2_movement.clone(), player2_secret), Error::<T>::InvalidHash);
+			ensure!(
+				p1.movement.is_equal(player1_movement.clone(), player1_secret),
+				Error::<T>::InvalidHash
+			);
+			ensure!(
+				p2.movement.is_equal(player2_movement.clone(), player2_secret),
+				Error::<T>::InvalidHash
+			);
 
 			if game_state.game_result != GameResult::NotPlayed {
-				Self::deposit_event(Event::GameFinished(game_id, game_state.game_result, game_state.winner));
+				Self::deposit_event(Event::GameFinished(
+					game_id,
+					game_state.game_result,
+					game_state.winner,
+				));
 				return Ok(());
 			}
 
@@ -264,12 +272,12 @@ pub mod pallet {
 				GameResult::Lose => {
 					// Player2 wins
 					game_state.winner = Some(player2.clone());
-				}
+				},
 				GameResult::Draw => {
 					// Nobody wins or loses
 					game_state.game_result = GameResult::Draw;
 				},
-				_ => {}
+				_ => {},
 			}
 			let winner = game_state.winner.clone();
 			game_state.game_result = game_result.clone();
