@@ -1,6 +1,7 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
 use frame_support::pallet_prelude::*;
+use frame_support::traits::Currency;
 use frame_system::pallet_prelude::*;
 pub use pallet::*;
 
@@ -34,26 +35,27 @@ impl SecretGameMovement {
 }
 
 #[derive(Clone, Copy, Encode, Debug, Decode, Eq, TypeInfo, MaxEncodedLen, PartialEq)]
-pub struct PlayerMovement<AccountId> {
+pub struct PlayerMovement<AccountId, Balance> {
 	player: AccountId,
 	movement: SecretGameMovement,
+	bet_amount: Balance,
 }
 
 #[derive(Clone, Copy, Encode, Debug, Decode, Eq, TypeInfo, MaxEncodedLen, PartialEq)]
-pub struct GameState<AccountId: PartialEq + Clone> {
-	pub player1: Option<PlayerMovement<AccountId>>,
-	pub player2: Option<PlayerMovement<AccountId>>,
+pub struct GameState<AccountId: PartialEq + Clone, Balance> {
+	pub player1: Option<PlayerMovement<AccountId, Balance>>,
+	pub player2: Option<PlayerMovement<AccountId, Balance>>,
 	pub game_result: GameResult,
 	pub winner: Option<AccountId>,
 }
 
-impl<AccountId: PartialEq + Clone> Default for GameState<AccountId> {
+impl<AccountId: PartialEq + Clone, Balance> Default for GameState<AccountId, Balance> {
 	fn default() -> Self {
 		Self { player1: None, player2: None, game_result: GameResult::NotPlayed, winner: None }
 	}
 }
 
-impl<AccountId: PartialEq + Clone> GameState<AccountId> {
+impl<AccountId: PartialEq + Clone, Balance> GameState<AccountId, Balance> {
 	pub fn has_player(&self, player: AccountId) -> bool {
 		let mut found = false;
 		if let Some(val) = &self.player1 {
@@ -80,9 +82,13 @@ impl<AccountId: PartialEq + Clone> GameState<AccountId> {
 		player: AccountId,
 		movement: GameMovement,
 		secret: Secret,
+		bet_amount: Balance,
 	) -> bool {
-		let player_movement =
-			Some(PlayerMovement { player, movement: SecretGameMovement::new(movement, secret) });
+		let player_movement = Some(PlayerMovement {
+			player,
+			movement: SecretGameMovement::new(movement, secret),
+			bet_amount,
+		});
 		if self.player1.is_none() {
 			self.player1 = player_movement;
 		} else if self.player2.is_none() {
@@ -144,9 +150,19 @@ impl GameMovement {
 pub mod pallet {
 	use super::*;
 
+	use frame_support::traits::ReservableCurrency;
+
+	type BalanceOf<T> =
+		<<T as Config>::Currency as Currency<<T as frame_system::Config>::AccountId>>::Balance;
+
 	#[pallet::config]
 	pub trait Config: frame_system::Config {
 		type Event: From<Event<Self>> + IsType<<Self as frame_system::Config>::Event>;
+
+		type Currency: ReservableCurrency<Self::AccountId>;
+
+		#[pallet::constant]
+		type MinBetAmount: Get<BalanceOf<Self>>;
 	}
 
 	#[pallet::pallet]
@@ -159,7 +175,8 @@ pub mod pallet {
 
 	#[pallet::storage]
 	#[pallet::getter(fn games)]
-	pub type Games<T: Config> = StorageMap<_, Blake2_128Concat, GameId, GameState<T::AccountId>>;
+	pub type Games<T: Config> =
+		StorageMap<_, Blake2_128Concat, GameId, GameState<T::AccountId, BalanceOf<T>>>;
 
 	// Pallets use events to inform users when important changes are made.
 	// https://docs.substrate.io/v3/runtime/events-and-errors
@@ -188,6 +205,26 @@ pub mod pallet {
 		PlayerNotInGame,
 		/// The secret movement (hash) doesn't match with the secret and movement
 		InvalidHash,
+		/// The bet amount must be equal or greater than the minimal
+		InsufficientBetAmount,
+		/// The player has not enough balance
+		InsufficientBalance,
+	}
+
+	fn pay_price_to_winner<T: Config>(
+		winner: &T::AccountId,
+		loser: &T::AccountId,
+		amount_winner: <<T as Config>::Currency as Currency<<T>::AccountId>>::Balance,
+		amount_loser: <<T as Config>::Currency as Currency<<T>::AccountId>>::Balance,
+	) -> Result<(), DispatchError> {
+		T::Currency::repatriate_reserved(
+			loser,
+			winner,
+			amount_loser,
+			frame_support::traits::BalanceStatus::Reserved,
+		)?;
+		T::Currency::unreserve(winner, amount_winner);
+		Ok(())
 	}
 
 	#[pallet::call]
@@ -210,15 +247,23 @@ pub mod pallet {
 			game_id: GameId,
 			movement: GameMovement,
 			secret: Secret,
+			bet_amount: BalanceOf<T>,
 		) -> DispatchResult {
 			let account_id = ensure_signed(origin)?;
+
+			let min_amount = T::MinBetAmount::get();
+			ensure!(bet_amount >= min_amount, Error::<T>::InsufficientBetAmount);
 
 			let mut game_state = Games::<T>::get(game_id).ok_or(Error::<T>::GameNotFound)?;
 
 			ensure!(game_state.has_free_slots(), Error::<T>::GameIsFull);
 			ensure!(!game_state.has_player(account_id.clone()), Error::<T>::PlayerAlreadyInGame);
 
-			game_state.add_player(account_id.clone(), movement, secret);
+			if let Err(_) = T::Currency::reserve(&account_id, bet_amount) {
+				return Err(Error::<T>::InsufficientBalance.into());
+			}
+
+			game_state.add_player(account_id.clone(), movement, secret, bet_amount);
 			Games::<T>::insert(game_id, game_state);
 
 			Self::deposit_event(Event::PlayerMadeMovement(account_id));
@@ -268,10 +313,18 @@ pub mod pallet {
 				GameResult::Win => {
 					// Player1 wins
 					game_state.winner = Some(player1.clone());
+					let amount_winner = game_state.player1.as_ref().unwrap().bet_amount.clone();
+					let amount_loser = game_state.player2.as_ref().unwrap().bet_amount.clone();
+
+					pay_price_to_winner::<T>(&player1, &player2, amount_winner, amount_loser)?;
 				},
 				GameResult::Lose => {
 					// Player2 wins
 					game_state.winner = Some(player2.clone());
+					let amount_winner = game_state.player2.as_ref().unwrap().bet_amount.clone();
+					let amount_loser = game_state.player1.as_ref().unwrap().bet_amount.clone();
+
+					pay_price_to_winner::<T>(&player2, &player1, amount_winner, amount_loser)?;
 				},
 				GameResult::Draw => {
 					// Nobody wins or loses
@@ -282,6 +335,7 @@ pub mod pallet {
 			let winner = game_state.winner.clone();
 			game_state.game_result = game_result.clone();
 			Games::<T>::insert(game_id, game_state);
+
 			Self::deposit_event(Event::GameFinished(game_id, game_result, winner));
 
 			Ok(())

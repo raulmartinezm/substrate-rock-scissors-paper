@@ -261,9 +261,15 @@ impl pallet_sudo::Config for Runtime {
 	type Call = Call;
 }
 
+parameter_types! {
+	pub const MinBetAmount: u64 = 100;
+}
+
 /// Configure the pallet-template in pallets/template.
 impl pallet_rock_paper_scissors::Config for Runtime {
 	type Event = Event;
+	type Currency = Balances;
+	type MinBetAmount = MinBetAmount;
 }
 
 // Create the runtime by composing the FRAME pallets that were previously configured.
