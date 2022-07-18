@@ -81,10 +81,28 @@ pub mod play_game {
 	fn should_emit_error_when_a_game_is_full() {
 		new_test_ext(&ENDOWED_ACCOUNTS, ENDOWMENT_AMOUNT).execute_with(|| {
 			let _ = RPS::create_game(Origin::signed(ALICE));
-			let _ = RPS::play_game(Origin::signed(ALICE), GAME_ID, GameMovement::Rock, A_SECRET, BET_AMOUNT);
-			let _ = RPS::play_game(Origin::signed(BOB), GAME_ID, GameMovement::Rock, A_SECRET, BET_AMOUNT);
+			let _ = RPS::play_game(
+				Origin::signed(ALICE),
+				GAME_ID,
+				GameMovement::Rock,
+				A_SECRET,
+				BET_AMOUNT,
+			);
+			let _ = RPS::play_game(
+				Origin::signed(BOB),
+				GAME_ID,
+				GameMovement::Rock,
+				A_SECRET,
+				BET_AMOUNT,
+			);
 			assert_noop!(
-				RPS::play_game(Origin::signed(DAVE), GAME_ID, GameMovement::Rock, A_SECRET, BET_AMOUNT),
+				RPS::play_game(
+					Origin::signed(DAVE),
+					GAME_ID,
+					GameMovement::Rock,
+					A_SECRET,
+					BET_AMOUNT
+				),
 				Error::<Test>::GameIsFull
 			);
 		});
@@ -94,12 +112,34 @@ pub mod play_game {
 	fn should_emit_error_when_a_player_has_not_enough_balance() {
 		new_test_ext(&[ALICE], ENDOWMENT_AMOUNT).execute_with(|| {
 			let _ = RPS::create_game(Origin::signed(ALICE));
-			let _ = RPS::play_game(Origin::signed(ALICE), GAME_ID, GameMovement::Rock, A_SECRET, BET_AMOUNT);
-			assert_eq!(last_event(), mock::Event::RPS(crate::Event::PlayerMadeMovement(ALICE)), "Alice should have enough balance and be allowed to play");
+			let _ = RPS::play_game(
+				Origin::signed(ALICE),
+				GAME_ID,
+				GameMovement::Rock,
+				A_SECRET,
+				BET_AMOUNT,
+			);
+			assert_eq!(
+				last_event(),
+				mock::Event::RPS(crate::Event::PlayerMadeMovement(ALICE)),
+				"Alice should have enough balance and be allowed to play"
+			);
 
-			let _ = RPS::play_game(Origin::signed(BOB), GAME_ID, GameMovement::Rock, A_SECRET, BET_AMOUNT);
+			let _ = RPS::play_game(
+				Origin::signed(BOB),
+				GAME_ID,
+				GameMovement::Rock,
+				A_SECRET,
+				BET_AMOUNT,
+			);
 			assert_noop!(
-				RPS::play_game(Origin::signed(DAVE), GAME_ID, GameMovement::Rock, A_SECRET, BET_AMOUNT),
+				RPS::play_game(
+					Origin::signed(DAVE),
+					GAME_ID,
+					GameMovement::Rock,
+					A_SECRET,
+					BET_AMOUNT
+				),
 				Error::<Test>::InsufficientBalance
 			);
 		});
@@ -109,9 +149,21 @@ pub mod play_game {
 	fn should_emit_error_when_a_player_tries_to_join_twice() {
 		new_test_ext(&ENDOWED_ACCOUNTS, ENDOWMENT_AMOUNT).execute_with(|| {
 			let _ = RPS::create_game(Origin::signed(ALICE));
-			let _ = RPS::play_game(Origin::signed(ALICE), GAME_ID, GameMovement::Rock, A_SECRET, BET_AMOUNT);
+			let _ = RPS::play_game(
+				Origin::signed(ALICE),
+				GAME_ID,
+				GameMovement::Rock,
+				A_SECRET,
+				BET_AMOUNT,
+			);
 			assert_noop!(
-				RPS::play_game(Origin::signed(ALICE), GAME_ID, GameMovement::Rock, A_SECRET, BET_AMOUNT),
+				RPS::play_game(
+					Origin::signed(ALICE),
+					GAME_ID,
+					GameMovement::Rock,
+					A_SECRET,
+					BET_AMOUNT
+				),
 				Error::<Test>::PlayerAlreadyInGame
 			);
 		});
@@ -121,9 +173,21 @@ pub mod play_game {
 	fn saves_player_movement() {
 		new_test_ext(&ENDOWED_ACCOUNTS, ENDOWMENT_AMOUNT).execute_with(|| {
 			let _ = RPS::create_game(Origin::signed(ALICE));
-			let _ = RPS::play_game(Origin::signed(ALICE), GAME_ID, GameMovement::Rock, A_SECRET, BET_AMOUNT);
+			let _ = RPS::play_game(
+				Origin::signed(ALICE),
+				GAME_ID,
+				GameMovement::Rock,
+				A_SECRET,
+				BET_AMOUNT,
+			);
 			assert_eq!(last_event(), mock::Event::RPS(crate::Event::PlayerMadeMovement(ALICE)));
-			let _ = RPS::play_game(Origin::signed(BOB), GAME_ID, GameMovement::Paper, A_SECRET, BET_AMOUNT);
+			let _ = RPS::play_game(
+				Origin::signed(BOB),
+				GAME_ID,
+				GameMovement::Paper,
+				A_SECRET,
+				BET_AMOUNT,
+			);
 			assert_eq!(last_event(), mock::Event::RPS(crate::Event::PlayerMadeMovement(BOB)));
 		});
 	}
@@ -161,8 +225,20 @@ pub mod reveal_winner {
 
 		new_test_ext(&ENDOWED_ACCOUNTS, ENDOWMENT_AMOUNT).execute_with(|| {
 			let _ = RPS::create_game(Origin::signed(ALICE));
-			let _ = RPS::play_game(Origin::signed(ALICE), GAME_ID, GameMovement::Rock, A_SECRET, BET_AMOUNT);
-			let _ = RPS::play_game(Origin::signed(BOB), GAME_ID, GameMovement::Rock, A_SECRET, BET_AMOUNT);
+			let _ = RPS::play_game(
+				Origin::signed(ALICE),
+				GAME_ID,
+				GameMovement::Rock,
+				A_SECRET,
+				BET_AMOUNT,
+			);
+			let _ = RPS::play_game(
+				Origin::signed(BOB),
+				GAME_ID,
+				GameMovement::Rock,
+				A_SECRET,
+				BET_AMOUNT,
+			);
 
 			assert_noop!(
 				RPS::reveal_winner(
@@ -185,9 +261,20 @@ pub mod reveal_winner {
 
 		new_test_ext(&ENDOWED_ACCOUNTS, ENDOWMENT_AMOUNT).execute_with(|| {
 			let _ = RPS::create_game(Origin::signed(ALICE));
-			let _ = RPS::play_game(Origin::signed(ALICE), GAME_ID, GameMovement::Rock, A_SECRET, BET_AMOUNT);
-			let _ =
-				RPS::play_game(Origin::signed(BOB), GAME_ID, GameMovement::Paper, ANOTHER_SECRET, BET_AMOUNT);
+			let _ = RPS::play_game(
+				Origin::signed(ALICE),
+				GAME_ID,
+				GameMovement::Rock,
+				A_SECRET,
+				BET_AMOUNT,
+			);
+			let _ = RPS::play_game(
+				Origin::signed(BOB),
+				GAME_ID,
+				GameMovement::Paper,
+				ANOTHER_SECRET,
+				BET_AMOUNT,
+			);
 
 			assert_noop!(
 				RPS::reveal_winner(
@@ -221,9 +308,20 @@ pub mod reveal_winner {
 	fn should_emit_event_when_game_finished() {
 		new_test_ext(&ENDOWED_ACCOUNTS, ENDOWMENT_AMOUNT).execute_with(|| {
 			let _ = RPS::create_game(Origin::signed(ALICE));
-			let _ = RPS::play_game(Origin::signed(ALICE), GAME_ID, GameMovement::Rock, A_SECRET, BET_AMOUNT);
-			let _ =
-				RPS::play_game(Origin::signed(BOB), GAME_ID, GameMovement::Paper, ANOTHER_SECRET, BET_AMOUNT);
+			let _ = RPS::play_game(
+				Origin::signed(ALICE),
+				GAME_ID,
+				GameMovement::Rock,
+				A_SECRET,
+				BET_AMOUNT,
+			);
+			let _ = RPS::play_game(
+				Origin::signed(BOB),
+				GAME_ID,
+				GameMovement::Paper,
+				ANOTHER_SECRET,
+				BET_AMOUNT,
+			);
 			let _ = RPS::reveal_winner(
 				Origin::signed(ALICE),
 				GAME_ID,
@@ -244,9 +342,20 @@ pub mod reveal_winner {
 	fn should_emit_same_event_when_game_is_already_finished() {
 		new_test_ext(&ENDOWED_ACCOUNTS, ENDOWMENT_AMOUNT).execute_with(|| {
 			let _ = RPS::create_game(Origin::signed(ALICE));
-			let _ = RPS::play_game(Origin::signed(ALICE), GAME_ID, GameMovement::Rock, A_SECRET, BET_AMOUNT);
-			let _ =
-				RPS::play_game(Origin::signed(BOB), GAME_ID, GameMovement::Paper, ANOTHER_SECRET, BET_AMOUNT);
+			let _ = RPS::play_game(
+				Origin::signed(ALICE),
+				GAME_ID,
+				GameMovement::Rock,
+				A_SECRET,
+				BET_AMOUNT,
+			);
+			let _ = RPS::play_game(
+				Origin::signed(BOB),
+				GAME_ID,
+				GameMovement::Paper,
+				ANOTHER_SECRET,
+				BET_AMOUNT,
+			);
 			let _ = RPS::reveal_winner(
 				Origin::signed(ALICE),
 				GAME_ID,
